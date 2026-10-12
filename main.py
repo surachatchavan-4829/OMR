@@ -358,6 +358,22 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
                 "box": det["box"]
             })
 
+        # หากตรวจพบข้อสอบในกระดาษขนาด 25 ข้อ (เช่น 10 - 24 ข้อ) ให้เติมให้แสดงครบ 25 ข้อเสมอ
+        # เพื่อให้เฉลยปรากฏครบทุกข้อ 1 ถึง 25 ให้ผู้ใช้ตรวจสอบ/แก้ไขได้อย่างครบถ้วน
+        if 10 <= len(extracted_key) < 25:
+            for q in range(1, 26):
+                sq = str(q)
+                if sq not in extracted_key:
+                    extracted_key[sq] = ""
+                    items.append({
+                        "question": q,
+                        "selected": "",
+                        "rawClass": "invalid_blank",
+                        "confidence": 0.0,
+                        "box": None
+                    })
+            items.sort(key=lambda it: it["question"])
+
         return {
             "status": "success",
             "totalQuestions": len(extracted_key),
