@@ -262,11 +262,11 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
         # ปรับหมุนทิศทางภาพอัตโนมัติตามค่า EXIF
         preprocess_image_orientation(filepath)
 
-        # ใช้ conf=0.15 และ imgsz=1024 เพื่อความละเอียดสูง
+        # ใช้ conf=0.15 และ imgsz=800 เพื่อให้ตรวจจับกล่องคำตอบครบทุกข้อตามโมเดลเดิม
         results = model.predict(
             source=filepath,
             conf=0.15,
-            imgsz=1024,
+            imgsz=800,
             verbose=False
         )
 
@@ -409,11 +409,11 @@ async def predict(
         # ปรับหมุนทิศทางภาพอัตโนมัติตามค่า EXIF
         preprocess_image_orientation(filepath)
 
-        # ประมวลผลภาพผ่าน YOLO Model ด้วย conf=0.15 และ imgsz=1024 เพื่อความละเอียดสูง
+        # ประมวลผลภาพผ่าน YOLO Model ด้วย conf=0.15 และ imgsz=800 เพื่อความแม่นยำตามโมเดลเดิม
         results = model.predict(
             source=filepath,
             conf=0.15,
-            imgsz=1024,
+            imgsz=800,
             verbose=False
         )
 
