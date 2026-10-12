@@ -308,8 +308,9 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
             if cls_name.startswith("valid") or choice in ["1", "2", "3", "4", "5"]:
                 last_valid_idx = i
 
-        # ตัดข้อสอบส่วนท้ายที่เป็นข้อว่างออกทั้งหมด (เก็บเฉพาะถึงข้อสุดท้ายที่มีการระบาย)
-        if last_valid_idx > 0:
+        # ตัดข้อสอบส่วนท้ายที่เป็นข้อว่างออกเฉพาะกระดาษแผ่นใหญ่ (มากกว่า 30 ข้อ)
+        # แต่หากตรวจพบไม่เกิน 30 ข้อ (เช่น กระดาษ 20-25 ข้อ) ให้คงไว้ครบทุกข้อที่ตรวจพบ
+        if len(sorted_answers) > 30 and last_valid_idx > 0:
             sorted_answers = sorted_answers[:last_valid_idx]
 
         extracted_key = {}
