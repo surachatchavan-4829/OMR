@@ -322,11 +322,25 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
 
         # หาข้อสุดท้ายที่มีการระบายเฉลยจริง (ไม่ใช่ข้อว่าง/invalid_blank)
         last_valid_idx = 0
+        valid_answers = []
         for i, det in enumerate(sorted_answers, start=1):
             cls_name = det["class_name"]
             choice = CHOICE_MAP.get(cls_name, cls_name)
             if cls_name.startswith("valid") or choice in ["1", "2", "3", "4", "5"]:
                 last_valid_idx = i
+                valid_answers.append(det)
+
+        # หากไม่พบกระดาษคำตอบ หรือไม่พบการระบายคำตอบเฉลยเลย (ถือว่าไม่ใช่รูปภาพกระดาษเฉลย)
+        if len(sorted_answers) < 3 or len(valid_answers) == 0:
+            return {
+                "status": "not_an_answer_key",
+                "isAnswerKey": False,
+                "message": "ไม่ใช่รูปกระดาษเฉลย (ตรวจไม่พบกระดาษคำตอบ หรือไม่พบรอยระบายคำตอบเฉลยในรูปภาพ กรุณาถ่ายรูปกระดาษเฉลยที่มีการระบายคำตอบชัดเจน)",
+                "totalQuestions": 0,
+                "answerKey": {},
+                "items": [],
+                "summary": "ไม่ใช่รูปกระดาษเฉลย"
+            }
 
         # ตัดข้อสอบส่วนท้ายที่เป็นข้อว่างออกเฉพาะกระดาษแผ่นใหญ่ (มากกว่า 30 ข้อ)
         # แต่หากตรวจพบไม่เกิน 30 ข้อ (เช่น กระดาษ 20-25 ข้อ) ให้คงไว้ครบทุกข้อที่ตรวจพบ
@@ -376,6 +390,7 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
 
         return {
             "status": "success",
+            "isAnswerKey": True,
             "totalQuestions": len(extracted_key),
             "answerKey": extracted_key,
             "items": items,
