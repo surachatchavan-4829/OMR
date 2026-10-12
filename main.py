@@ -345,11 +345,11 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
         # ปรับหมุนทิศทางภาพอัตโนมัติตามค่า EXIF
         preprocess_image_orientation(filepath)
 
-        # ใช้ conf=0.15 เพื่อให้ตรวจจับกล่องคำตอบครบทุกข้อ
+        # ใช้ conf=0.15 และ imgsz=1024 เพื่อเพิ่มความละเอียดในการตรวจจับวงกลมขนาดเล็ก
         results = model.predict(
             source=filepath,
             conf=0.15,
-            imgsz=800,
+            imgsz=1024,
             verbose=False
         )
 
@@ -403,12 +403,14 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
             choice = CHOICE_MAP.get(class_name, class_name)
             str_idx = str(idx)
 
-            # เฉพาะข้อที่มีการระบายตัวเลือกเท่านั้นจึงบันทึกเข้าเฉลย
+            # หากตรวจพบตัวเลือกชัดเจนให้ใช้ตัวเลือกนั้น หากตรวจจับไม่ชัดให้เว้นว่างไว้ให้ผู้ใช้เลือกเอง
             if class_name.startswith("valid") or choice in ["1", "2", "3", "4", "5"]:
                 selected_val = choice
-                extracted_key[str_idx] = selected_val
             else:
                 selected_val = ""
+
+            # บันทึกทุกข้อลงในเฉลยเรียงตั้งแต่ข้อ 1 ถึงข้อสุดท้าย
+            extracted_key[str_idx] = selected_val
 
             items.append({
                 "question": idx,
@@ -425,6 +427,7 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
             "items": items,
             "summary": f"ถอดเฉลยได้ทั้งหมด {len(extracted_key)} ข้อ"
         }
+
 
     except Exception as e:
         raise HTTPException(
@@ -489,11 +492,11 @@ async def predict(
         # ปรับหมุนทิศทางภาพอัตโนมัติตามค่า EXIF
         preprocess_image_orientation(filepath)
 
-        # ประมวลผลภาพผ่าน YOLO Model ด้วย conf=0.15 เพื่อดักจับทุกกล่องคำตอบ
+        # ประมวลผลภาพผ่าน YOLO Model ด้วย conf=0.15 และ imgsz=1024 เพื่อความละเอียดสูง
         results = model.predict(
             source=filepath,
             conf=0.15,
-            imgsz=800,
+            imgsz=1024,
             verbose=False
         )
 
