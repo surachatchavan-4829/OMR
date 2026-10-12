@@ -123,21 +123,8 @@ def compute_box_iou(boxA, boxB):
     return interArea / float(boxAArea + boxBArea - interArea)
 
 
-def get_choice_digit(cls_name: str) -> Optional[str]:
-    """แปลงชื่อคลาสเป็นเลขตัวเลือก 1-5 หากเป็นตัวเลือก valid"""
-    ch = CHOICE_MAP.get(cls_name, cls_name)
-    if ch in ["1", "2", "3", "4", "5"]:
-        return ch
-    return None
-
-
-def remove_duplicate_detections(detections, iou_threshold=0.40):
-    """
-    ขจัดกล่องที่ซ้อนทับกันซ้ำซ้อนบนข้อเดียวกัน:
-    - หากกล่องที่ทับกันมีตัวเลือกต่างกัน (เช่น ฝนทั้ง 1 และ 3) หรือพบคลาส invalid_multiple
-      จะรวมเป็นคลาส 'invalid_multiple' (หลายตัวเลือก) ทันที
-    - หากเป็นตัวเลือกเดียวกัน จะเก็บกล่องที่มีค่า Confidence สูงกว่า
-    """
+def remove_duplicate_detections(detections, iou_threshold=0.45):
+    """ขจัดกล่องที่ซ้อนทับกันซ้ำซ้อนบนข้อเดียวกัน โดยเก็บกล่องที่มีค่า Confidence สูงกว่า"""
     if not detections:
         return []
 
@@ -147,47 +134,15 @@ def remove_duplicate_detections(detections, iou_threshold=0.40):
 
     for det in sorted_dets:
         box_a = det["box"]
-        merged = False
-
+        is_duplicate = False
         for kept in kept_dets:
             box_b = kept["box"]
             iou = compute_box_iou(box_a, box_b)
             if iou > iou_threshold:
-                # พบกล่องซ้อนทับกันในข้อเดียวกัน
-                cls_a = det["class_name"]
-                cls_b = kept["class_name"]
-
-                digit_a = get_choice_digit(cls_a)
-                digit_b = get_choice_digit(cls_b)
-
-                # ถ้าข้อใดข้อหนึ่งเป็น invalid_multiple หรือเจอสองตัวเลือกที่ต่างกัน
-                if cls_a == "invalid_multiple" or cls_b == "invalid_multiple" or (digit_a and digit_b and digit_a != digit_b):
-                    choices = set(kept.get("multiple_choices", []))
-                    if digit_a:
-                        choices.add(digit_a)
-                    if digit_b:
-                        choices.add(digit_b)
-
-                    kept["class_name"] = "invalid_multiple"
-                    kept["multiple_choices"] = sorted(list(choices))
-                    kept["confidence"] = max(kept["confidence"], det["confidence"])
-                    kept["box"] = {
-                        "x1": min(box_a["x1"], box_b["x1"]),
-                        "y1": min(box_a["y1"], box_b["y1"]),
-                        "x2": max(box_a["x2"], box_b["x2"]),
-                        "y2": max(box_a["y2"], box_b["y2"])
-                    }
-                merged = True
+                is_duplicate = True
                 break
-
-        if not merged:
-            det_copy = dict(det)
-            digit = get_choice_digit(det_copy["class_name"])
-            if digit:
-                det_copy["multiple_choices"] = [digit]
-            elif det_copy["class_name"] == "invalid_multiple":
-                det_copy["multiple_choices"] = []
-            kept_dets.append(det_copy)
+        if not is_duplicate:
+            kept_dets.append(det)
 
     return kept_dets
 
@@ -195,33 +150,30 @@ def remove_duplicate_detections(detections, iou_threshold=0.40):
 def sort_omr_detections(detections):
     """
     จัดเรียงตำแหน่งกล่องคำตอบ OMR ตามพิกัด 2 มิติ (แนวตั้งและแนวนอน y1, x1):
-    1. ขจัดกล่องซ้ำซ้อนด้วย Non-Maximum Suppression (IoU) พร้อมดักจับหลายคำตอบ
+    1. ขจัดกล่องซ้อนทับด้วย Non-Maximum Suppression (IoU)
     2. คำนวณจุดศูนย์กลาง cx, cy ของแต่ละกล่อง
     3. แบ่งกลุ่มกล่องตามคอลัมน์แนวตั้ง (X-clustering)
     4. เรียงคอลัมน์จากซ้ายไปขวา (X น้อยไปมาก)
-    5. ในแต่ละคอลัมน์ ตรวจจับแถวคำตอบเดียวกัน (Row-level collision) หากมีมากกว่า 1 ตัวเลือก จะปรับเป็น invalid_multiple
-    6. เรียงคำตอบในแต่ละคอลัมน์จากบนลงล่าง (Y น้อยไปมาก)
+    5. ในแต่ละคอลัมน์ เรียงคำตอบจากบนลงล่าง (Y น้อยไปมาก)
     """
     if not detections:
         return []
 
-    # 1. ขจัดกล่องซ้อนทับกันซ้ำซ้อน
+    # ขจัดกล่องซ้อนทับกันซ้ำซ้อน
     detections = remove_duplicate_detections(detections)
 
-    # 2. คำนวณ cx, cy, width, height สำหรับแต่ละ detection
+    # คำนวณ cx, cy, width สำหรับแต่ละ detection
     for det in detections:
         box = det["box"]
         det["cx"] = (box["x1"] + box["x2"]) / 2.0
         det["cy"] = (box["y1"] + box["y2"]) / 2.0
         det["width"] = abs(box["x2"] - box["x1"])
-        det["height"] = abs(box["y2"] - box["y1"])
 
-    # หาความกว้างและความสูงเฉลี่ย
+    # หาความกว้างเฉลี่ย เพื่อกำหนด Threshold สำหรับแบ่งคอลัมน์
     avg_width = sum(d["width"] for d in detections) / len(detections)
-    avg_height = sum(d["height"] for d in detections) / len(detections)
     col_threshold = max(avg_width * 0.75, 25.0)
 
-    # 3. เรียงลำดับตาม X ก่อนเพื่อแยกคอลัมน์
+    # เรียงลำดับตาม X ก่อนเพื่อแยกคอลัมน์
     sorted_by_x = sorted(detections, key=lambda d: d["cx"])
 
     columns = []
@@ -244,51 +196,17 @@ def sort_omr_detections(detections):
     # เรียงคอลัมน์จากซ้ายไปขวา (แกน X)
     columns.sort(key=lambda col: sum(d["cx"] for d in col) / len(col))
 
-    # 4. ในแต่ละคอลัมน์ ตรวจสอบข้อคำตอบที่อยู่ในแถว Y เดียวกัน (Row-level collision merge)
+    # ในแต่ละคอลัมน์ เรียงจากบนลงล่าง (แกน Y: y1)
     sorted_detections = []
-    row_height_threshold = max(avg_height * 0.65, 15.0)
-
     for col in columns:
-        col.sort(key=lambda d: d["box"]["y1"])
-        merged_col = []
-
-        for det in col:
-            if not merged_col:
-                merged_col.append(det)
-            else:
-                last_det = merged_col[-1]
-                # ตรวจสอบว่าอยู่ในแถวข้อเดียวกันหรือไม่ (ระยะห่างแนวแกน Y)
-                y_dist = abs(det["cy"] - last_det["cy"])
-                if y_dist <= row_height_threshold:
-                    cls_a = det["class_name"]
-                    cls_b = last_det["class_name"]
-                    digit_a = get_choice_digit(cls_a)
-                    digit_b = get_choice_digit(cls_b)
-
-                    # ถ้าตรวจพบมากกว่า 1 ตัวเลือกในข้อเดียวกัน
-                    if cls_a == "invalid_multiple" or cls_b == "invalid_multiple" or (digit_a and digit_b and digit_a != digit_b):
-                        choices = set(last_det.get("multiple_choices", []))
-                        if digit_a:
-                            choices.add(digit_a)
-                        if digit_b:
-                            choices.add(digit_b)
-                        last_det["class_name"] = "invalid_multiple"
-                        last_det["multiple_choices"] = sorted(list(choices))
-                        last_det["confidence"] = max(last_det["confidence"], det["confidence"])
-                    elif det["confidence"] > last_det["confidence"]:
-                        # ถ้าเป็นตัวเลือกเดียวกัน เลือกตัวที่มีความมั่นใจสูงกว่า
-                        last_det.update(det)
-                else:
-                    merged_col.append(det)
-
-        sorted_detections.extend(merged_col)
+        col.sort(key=lambda d: (d["box"]["y1"], d["cx"]))
+        sorted_detections.extend(col)
 
     # ลบฟิลด์คำนวณชั่วคราวออก
     for det in sorted_detections:
         det.pop("cx", None)
         det.pop("cy", None)
         det.pop("width", None)
-        det.pop("height", None)
 
     return sorted_detections
 
@@ -344,11 +262,11 @@ async def extract_answer_key(file: UploadFile = File(None), image: UploadFile = 
         # ปรับหมุนทิศทางภาพอัตโนมัติตามค่า EXIF
         preprocess_image_orientation(filepath)
 
-        # ใช้ conf=0.15 และ imgsz=800 ตามค่าเดิมที่โมเดลเทรนมา
+        # ใช้ conf=0.15 และ imgsz=1024 เพื่อความละเอียดสูง
         results = model.predict(
             source=filepath,
             conf=0.15,
-            imgsz=800,
+            imgsz=1024,
             verbose=False
         )
 
@@ -491,11 +409,11 @@ async def predict(
         # ปรับหมุนทิศทางภาพอัตโนมัติตามค่า EXIF
         preprocess_image_orientation(filepath)
 
-        # ประมวลผลภาพผ่าน YOLO Model ด้วย conf=0.15 และ imgsz=800 เพื่อความแม่นยำตามโมเดลเดิม
+        # ประมวลผลภาพผ่าน YOLO Model ด้วย conf=0.15 และ imgsz=1024 เพื่อความละเอียดสูง
         results = model.predict(
             source=filepath,
             conf=0.15,
-            imgsz=800,
+            imgsz=1024,
             verbose=False
         )
 
@@ -585,12 +503,7 @@ async def predict(
             if idx <= len(sorted_answers):
                 det = sorted_answers[idx - 1]
                 class_name = det["class_name"]
-                if det.get("multiple_choices") and len(det["multiple_choices"]) > 1:
-                    selected_choice = f"หลายตัวเลือก ({', '.join(det['multiple_choices'])})"
-                elif class_name == "invalid_multiple":
-                    selected_choice = "หลายตัวเลือก"
-                else:
-                    selected_choice = CHOICE_MAP.get(class_name, class_name)
+                selected_choice = CHOICE_MAP.get(class_name, class_name)
                 confidence = det["confidence"]
                 box = det["box"]
             else:
