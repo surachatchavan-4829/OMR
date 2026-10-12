@@ -8,14 +8,34 @@ import json
 from typing import Optional, Dict
 from PIL import Image, ImageOps
 
+import cv2
+
 app = FastAPI(title="OMR React Native API", version="2.0.0")
 
 def preprocess_image_orientation(filepath: str):
-    """ปรับหมุนภาพตามค่า EXIF และสัดส่วนภาพสำหรับกระดาษคำตอบแนวนอน/แนวตั้ง"""
+    """
+    ปรับหมุนภาพตามค่า EXIF และเพิ่มความคมชัดของภาพอัตโนมัติ (Contrast Enhancement):
+    1. หมุนภาพตามค่า EXIF (exif_transpose) เพื่อให้ระนาบภาพถูกต้อง
+    2. ปรับ Contrast ด้วย CLAHE (Contrast Limited Adaptive Histogram Equalization)
+       เพื่อขับรอยฝนดินสอให้เข้มชัด แยกออกจากพื้นกระดาษขาว แม้ถ่ายในที่แสงน้อยหรือมีเงาตกกระทบ
+    """
     try:
+        # 1. หมุนภาพตามทิศทาง EXIF
         with Image.open(filepath) as img:
             transposed = ImageOps.exif_transpose(img)
+            if transposed.mode != "RGB":
+                transposed = transposed.convert("RGB")
             transposed.save(filepath)
+
+        # 2. ปรับ Contrast ด้วย CLAHE ในปริภูมิสี LAB (ปรับเฉพาะความสว่างช่อง L)
+        img_bgr = cv2.imread(filepath)
+        if img_bgr is not None:
+            lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            cl = clahe.apply(l)
+            enhanced = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
+            cv2.imwrite(filepath, enhanced)
     except Exception as e:
         print(f"Image preprocessing warning: {e}")
 
